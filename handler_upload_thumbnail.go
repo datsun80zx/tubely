@@ -1,10 +1,13 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
@@ -61,28 +64,41 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	}
 	defer file.Close()
 
-	imgData, err := io.ReadAll(file)
+	mediaType, _, err := mime.ParseMediaType(header.Header.Get("Content-Type"))
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "unable to parse thumbnail data", err)
+		respondWithError(w, http.StatusInternalServerError, "couldn't parse mime type", err)
+		return
+	}
+	if mediaType != "image/jpeg" && mediaType != "image/png" {
+		respondWithError(w, http.StatusBadRequest, "incorrect mime type", err)
 		return
 	}
 
-	imgStr := base64.StdEncoding.EncodeToString(imgData)
+	_, extension, found := strings.Cut(mediaType, "/")
+	if !found {
+		respondWithError(w, http.StatusInternalServerError, "unable to get extension from header", err)
+		return
+	}
 
-	mediaType := header.Header.Get("Content-Type")
+	filename := videoIDString + "." + extension
+	filePth := filepath.Join(cfg.assetsRoot, filename)
 
-	dataURL := fmt.Sprintf("data:%s;base64,%s", mediaType, imgStr)
+	dst, err := os.Create(filePth)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "unable to create filepath", err)
+		return
+	}
+	defer dst.Close()
 
-	// tn := thumbnail{
-	// 	data:      imgData,
-	// 	mediaType: mediaType,
-	// }
+	_, err = io.Copy(dst, file)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "unable to copy file to dst filepath", err)
+		return
+	}
 
-	// videoThumbnails[videoID] = tn
+	tnUrl := fmt.Sprintf("http://localhost:%s/assets/%s", cfg.port, filename)
 
-	// tnUrl := fmt.Sprintf("http://localhost:8091/api/thumbnails/%s", videoIDString)
-
-	video.ThumbnailURL = &dataURL
+	video.ThumbnailURL = &tnUrl
 
 	err = cfg.db.UpdateVideo(video)
 	if err != nil {
