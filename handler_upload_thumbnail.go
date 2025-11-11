@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"mime"
@@ -79,8 +81,10 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		respondWithError(w, http.StatusInternalServerError, "unable to get extension from header", err)
 		return
 	}
+	tnFileName := make([]byte, 32)
+	rand.Read(tnFileName)
 
-	filename := videoIDString + "." + extension
+	filename := base64.RawURLEncoding.EncodeToString(tnFileName) + "." + extension
 	filePth := filepath.Join(cfg.assetsRoot, filename)
 
 	dst, err := os.Create(filePth)
